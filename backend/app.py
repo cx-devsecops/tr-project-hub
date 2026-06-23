@@ -50,9 +50,8 @@ app.jinja_env.filters['role_badge'] = role_badge
 @app.before_request
 def init_request_context():
     \"\"\"Initialize request context\"\"\"
-    from flask import _request_ctx_stack
-    ctx = _request_ctx_stack.top
-    if ctx is not None:
+    from flask import has_request_context
+    if has_request_context():
         # Initialize request ID
         _get_request_id()
         # Set request start time
