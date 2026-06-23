@@ -7,6 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
+from markupsafe import escape
 from config import Config
 from models import db, User, Project, Task
 from database import init_db
@@ -49,7 +50,7 @@ app.jinja_env.filters['role_badge'] = role_badge
 # Initialize request context
 @app.before_request
 def init_request_context():
-    \"\"\"Initialize request context\"\"\"
+    """Initialize request context"""
     from flask import _request_ctx_stack
     ctx = _request_ctx_stack.top
     if ctx is not None:
@@ -93,7 +94,7 @@ def health():
 
 @app.errorhandler(404)
 def not_found(error):
-    \"\"\"404 error handler\"\"\"
+    """404 error handler"""
     from utils.request_context import get_request_context
     ctx = get_request_context()
     request_id = ctx.request_id if ctx and hasattr(ctx, 'request_id') else 'N/A'
@@ -109,7 +110,7 @@ def not_found(error):
 
 @app.errorhandler(500)
 def internal_error(error):
-    \"\"\"500 error handler\"\"\"
+    """500 error handler"""
     db.session.rollback()
     from utils.request_context import get_request_context
     ctx = get_request_context()
@@ -126,9 +127,35 @@ def internal_error(error):
                              request_id=request_id), 500
     return jsonify({'error': 'Internal server error', 'request_id': request_id}), 500
 
+def _sanitize_object_for_template(obj):
+    """
+    Sanitize database object attributes for safe rendering in templates.
+    Escapes HTML entities in string attributes to prevent XSS attacks.
+    """
+    if obj is None:
+        return None
+
+    # Create a sanitized dictionary representation
+    sanitized = {}
+    for key in dir(obj):
+        # Skip private attributes and methods
+        if key.startswith('_') or callable(getattr(obj, key)):
+            continue
+        try:
+            value = getattr(obj, key)
+            # Escape string values to prevent XSS
+            if isinstance(value, str):
+                sanitized[key] = escape(value)
+            else:
+                sanitized[key] = value
+        except Exception:
+            # Skip attributes that can't be accessed
+            continue
+    return sanitized
+
 @app.route('/admin')
 def admin_dashboard():
-    \"\"\"Admin dashboard\"\"\"
+    """Admin dashboard"""
     from utils.request_context import get_request_context
     ctx = get_request_context()
     request_id = ctx.request_id if ctx and hasattr(ctx, 'request_id') else 'N/A'
@@ -138,9 +165,12 @@ def admin_dashboard():
     projects = Project.query.all()
     tasks = Task.query.all()
 
+    # Sanitize projects data to prevent Stored XSS
+    sanitized_projects = [_sanitize_object_for_template(project) for project in projects]
+
     return render_template('admin.html',
                          users=users,
-                         projects=projects,
+                         projects=sanitized_projects,
                          tasks=tasks,
                          request_id=request_id)
 
